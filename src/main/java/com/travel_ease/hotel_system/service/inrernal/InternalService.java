@@ -3,6 +3,8 @@ package com.travel_ease.hotel_system.service.inrernal;
 import com.travel_ease.hotel_system.dto.request.internal.HoldRoomRequestDto;
 import com.travel_ease.hotel_system.dto.request.internal.HotelBookingValidationResponse;
 import com.travel_ease.hotel_system.dto.response.ResponseHotelDto;
+import com.travel_ease.hotel_system.entity.RoomInventory;
+import com.travel_ease.hotel_system.reposiroty.RoomInventoryRepository;
 import com.travel_ease.hotel_system.service.HotelService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +14,8 @@ import org.springframework.stereotype.Service;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -23,37 +27,52 @@ public class InternalService {
     @Value("${hotel.room.hold-duration-minutes}")
     private long holdDurationMinutes;
     private final HotelService hotelService;
+    private final RoomInventoryRepository roomInventoryRepository;
 
 
     public boolean holdRoom(HoldRoomRequestDto request) {
-        System.out.println("Hold room request");
-        if(isHeld(request.roomId(),request.checkIn(),request.checkOut())){
-            log.warn("Room already held, skipping");
-            return false;
-        }
+        log.info("Executing DB-backed room hold for room: {}", request.roomId());
 
-        String key =  buildHoldKey(
+        List<RoomInventory> inventories = roomInventoryRepository.findInventoryForUpdate(
                 request.roomId(),
                 request.checkIn(),
                 request.checkOut()
         );
+        long totalNights = ChronoUnit.DAYS.between(request.checkIn(),request.checkOut());
 
-        String value = "HELD:" + request.quantity();
-
-        Boolean success = redisTemplate.opsForValue()
-                .setIfAbsent(
-                        key,
-                        value,
-                        Duration.ofMinutes(holdDurationMinutes)
-                );
-
-        if (Boolean.TRUE.equals(success)) {
-            log.info("Room held in Redis | key={} | ttl={}min", key,holdDurationMinutes);
-            return true;
-        }else {
-            log.warn("Room already held | key={}", key);
+        if (inventories.size() != totalNights) {
+            log.error("Inventory records missing in database for requested dates!");
             return false;
         }
+
+        for (RoomInventory dailyInventory : inventories){
+            String dailyHoldKey = String.format("room:hold:%s:%s", request.roomId(), dailyInventory.getInventoryDate());
+            String currentHeldStr = redisTemplate.opsForValue().get(dailyHoldKey);
+            int currentHeldQty = (currentHeldStr != null) ? Integer.parseInt(currentHeldStr) : 0;
+
+            int actualAvailableRooms = dailyInventory.getTotalRooms() - (dailyInventory.getBookedRooms() + currentHeldQty);
+
+            if (actualAvailableRooms < request.quantity()) {
+                log.warn("Not enough rooms available for date: {}. Available: {}", dailyInventory.getInventoryDate(), actualAvailableRooms);
+                return false;
+            }
+        }
+
+        for (RoomInventory dailyInventory : inventories){
+            String dailyHoldKey = String.format("room:hold:%s:%s", request.roomId(), dailyInventory.getInventoryDate());
+            String currentHeldStr = redisTemplate.opsForValue().get(dailyHoldKey);
+            int currentHeldQty = (currentHeldStr != null) ? Integer.parseInt(currentHeldStr) : 0;
+            int newHeldQty = currentHeldQty + request.quantity();
+
+            redisTemplate.opsForValue().set(
+                    dailyHoldKey,
+                    String.valueOf(newHeldQty),
+                    Duration.ofMinutes(holdDurationMinutes)
+            );
+        }
+
+        log.info("Hybrid Room Hold SUCCESS | Room: {} | Duration: {} min", request.roomId(), holdDurationMinutes);
+        return true;
     }
 
 
@@ -61,19 +80,13 @@ public class InternalService {
         String key = buildHoldKey(request.roomId(), request.checkIn(), request.checkOut());
         Boolean deleted = redisTemplate.delete(key);
 
-        if(Boolean.TRUE.equals(deleted)){
+        if(deleted){
             log.info("Room hold released | key={}", key);
             return true;
         }
         return false;
 
     }
-
-    public boolean isHeld(UUID roomId, LocalDate checkIn, LocalDate checkOut) {
-        String key = buildHoldKey(roomId, checkIn, checkOut);
-        return redisTemplate.hasKey(key);
-    }
-
 
     public HotelBookingValidationResponse  validateHotel(String hotelId) throws SQLException {
         ResponseHotelDto response = hotelService.findById(hotelId);
@@ -85,8 +98,8 @@ public class InternalService {
 
     }
 
-    private String buildHoldKey(UUID uuid, LocalDate chickIn, LocalDate checkOut) {
-        return String.format("room:hold:%s:%s:%s", uuid, chickIn, checkOut);
+    private String buildHoldKey(UUID roomId, LocalDate chickIn, LocalDate checkOut) {
+        return String.format("room:hold:%s:%s:%s", roomId, chickIn, checkOut);
     }
 
 }
