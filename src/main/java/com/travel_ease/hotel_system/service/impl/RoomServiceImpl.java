@@ -6,37 +6,46 @@ import com.travel_ease.hotel_system.dto.response.paginate.RoomPaginateResponseDt
 import com.travel_ease.hotel_system.entity.Branch;
 import com.travel_ease.hotel_system.entity.Hotel;
 import com.travel_ease.hotel_system.entity.Room;
+import com.travel_ease.hotel_system.entity.RoomInventory;
 import com.travel_ease.hotel_system.enums.RoomStatusEnum;
 import com.travel_ease.hotel_system.exceptions.EntryNotFoundException;
 import com.travel_ease.hotel_system.reposiroty.BranchRepository;
 import com.travel_ease.hotel_system.reposiroty.HotelRepository;
+import com.travel_ease.hotel_system.reposiroty.RoomInventoryRepository;
 import com.travel_ease.hotel_system.reposiroty.RoomRepository;
 import com.travel_ease.hotel_system.service.RoomService;
 import com.travel_ease.hotel_system.util.Mapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class RoomServiceImpl implements RoomService {
 
     private final BranchRepository branchRepository;
     private final RoomRepository roomRepository;
     private final HotelRepository hotelRepository;
+    private final RoomInventoryRepository roomInventoryRepository;
     private final Mapper mapper;
 
     @Override
+    @Transactional
     public void create(RoomRequestDto dto) {
         Branch selectedBranch = branchRepository
                 .findById(dto.getBranchId()).orElseThrow(() -> new EntryNotFoundException("Branch not found"));
 
-        if(roomRepository.existsByRoomNumberAndBranch(dto.getRoomNumber(),selectedBranch)){
+        if(roomRepository.existsByRoomNumberAndBranch(dto.getRoomNumber(), selectedBranch)){
             throw new RuntimeException(
                     String.format("Room number '%s' already exists in this branch", dto.getRoomNumber())
             );
@@ -48,7 +57,6 @@ public class RoomServiceImpl implements RoomService {
                 .roomId(UUID.randomUUID().toString())
                 .roomNumber(dto.getRoomNumber())
                 .type(dto.getRoomType())
-
                 .bedCount(dto.getBedCount())
                 .status(RoomStatusEnum.AVAILABLE)
                 .branch(selectedBranch)
@@ -56,7 +64,27 @@ public class RoomServiceImpl implements RoomService {
                 .price(dto.getPrice())
                 .build();
 
-        roomRepository.save(room);
+        Room savedRoom = roomRepository.save(room);
+
+        log.info("Generating 365 days of inventory for Room Number: {} in Branch: {}", savedRoom.getRoomNumber(), selectedBranch.getBranchName());
+
+        LocalDate today = LocalDate.now();
+        List<RoomInventory> inventoryList = new ArrayList<>();
+
+        for (int i = 0; i < 365; i++) {
+            RoomInventory inventory = RoomInventory.builder()
+                    .room(savedRoom)
+                    .roomId(UUID.fromString(savedRoom.getRoomId()))
+                    .inventoryDate(today.plusDays(i))
+                    .totalRooms(1)
+                    .bookedRooms(0)
+                    .build();
+
+            inventoryList.add(inventory);
+        }
+        roomInventoryRepository.saveAll(inventoryList);
+
+        log.info("Successfully created room and initialized 365 inventory records.");
     }
 
     @Override
