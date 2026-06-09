@@ -1,5 +1,6 @@
 package com.travel_ease.hotel_system.service.impl;
 
+import com.travel_ease.hotel_system.dto.request.ConfirmBookingRequestDto;
 import com.travel_ease.hotel_system.dto.request.RoomRequestDto;
 import com.travel_ease.hotel_system.dto.response.ResponseRoomDto;
 import com.travel_ease.hotel_system.dto.response.paginate.RoomPaginateResponseDto;
@@ -9,6 +10,7 @@ import com.travel_ease.hotel_system.entity.Room;
 import com.travel_ease.hotel_system.entity.RoomInventory;
 import com.travel_ease.hotel_system.enums.RoomStatusEnum;
 import com.travel_ease.hotel_system.exceptions.EntryNotFoundException;
+import com.travel_ease.hotel_system.exceptions.InventoryDataCorruptedException;
 import com.travel_ease.hotel_system.reposiroty.BranchRepository;
 import com.travel_ease.hotel_system.reposiroty.HotelRepository;
 import com.travel_ease.hotel_system.reposiroty.RoomInventoryRepository;
@@ -17,12 +19,15 @@ import com.travel_ease.hotel_system.service.RoomService;
 import com.travel_ease.hotel_system.util.Mapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -32,12 +37,15 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class RoomServiceImpl implements RoomService {
-
+    @Value("${hotel.inventory.preview-days}")
+    private int inventoryPreviewDays;
     private final BranchRepository branchRepository;
     private final RoomRepository roomRepository;
     private final HotelRepository hotelRepository;
     private final RoomInventoryRepository roomInventoryRepository;
     private final Mapper mapper;
+    private final RedisTemplate<String, String> redisTemplate;
+
 
     @Override
     @Transactional
@@ -71,7 +79,7 @@ public class RoomServiceImpl implements RoomService {
         LocalDate today = LocalDate.now();
         List<RoomInventory> inventoryList = new ArrayList<>();
 
-        for (int i = 0; i < 365; i++) {
+        for (int i = 0; i < inventoryPreviewDays; i++) {
             RoomInventory inventory = RoomInventory.builder()
                     .room(savedRoom)
                     .roomId(UUID.fromString(savedRoom.getRoomId()))
@@ -175,4 +183,63 @@ public class RoomServiceImpl implements RoomService {
                 .dataCount(roomPage.getTotalElements())
                 .build();
     }
+
+    @Override
+    public boolean updateInventoryOnConfirmation(ConfirmBookingRequestDto request) {
+        LocalDate lockRndDate = request.checkOut().minusDays(1);
+        long totalNights = ChronoUnit.DAYS.between(request.checkIn(), lockRndDate);
+
+        List<RoomInventory> inventories = roomInventoryRepository
+                .findInventoryForUpdate(UUID.fromString(request.roomId()), request.checkIn(), request.checkOut());
+
+        if (inventories.size() != totalNights) {
+            throw new InventoryDataCorruptedException("Inventory records missing!");
+        }
+
+        List<String> redisKeysToRemove = new ArrayList<>();
+
+        for (RoomInventory dailyInventory : inventories) {
+            if (dailyInventory.getBookedRooms() + request.quantity() > dailyInventory.getTotalRooms()) {
+                return false;
+            }
+            dailyInventory.setBookedRooms(dailyInventory.getBookedRooms() + request.quantity());
+
+            String dailyHoldKey = String.format("room:hold:%s:%s", request.roomId(), dailyInventory.getInventoryDate());
+            redisKeysToRemove.add(dailyHoldKey);
+        }
+        roomInventoryRepository.saveAll(inventories);
+
+        try {
+            redisTemplate.delete(redisKeysToRemove);
+        } catch (Exception e) {
+            log.error("Redis clear failed: {}", e.getMessage());
+        }
+        return true;
+    }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
