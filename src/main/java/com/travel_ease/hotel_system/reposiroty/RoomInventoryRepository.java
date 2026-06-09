@@ -1,5 +1,6 @@
 package com.travel_ease.hotel_system.reposiroty;
 
+import com.travel_ease.hotel_system.entity.Room;
 import com.travel_ease.hotel_system.entity.RoomInventory;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -18,4 +19,6 @@ public interface RoomInventoryRepository extends JpaRepository<RoomInventory, UU
              """
     )
    List<RoomInventory> findInventoryForUpdate(@Param("roomId") UUID roomId, @Param("checkIn")LocalDate checkIn, @Param("checkOut") LocalDate checkOut);
+
+    boolean existsByRoomAndInventoryDate(Room room, LocalDate targetFutureDate);
 }
