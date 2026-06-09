@@ -1,5 +1,6 @@
 package com.travel_ease.hotel_system.service;
 
+import com.travel_ease.hotel_system.dto.request.ConfirmBookingRequestDto;
 import com.travel_ease.hotel_system.dto.request.RoomRequestDto;
 import com.travel_ease.hotel_system.dto.response.ResponseRoomDto;
 import com.travel_ease.hotel_system.dto.response.paginate.RoomPaginateResponseDto;
@@ -10,4 +11,5 @@ public interface RoomService {
     public void delete(String roomId);
     public ResponseRoomDto findById(String roomId);
     public RoomPaginateResponseDto findAll(int page, int size);
+    public boolean updateInventoryOnConfirmation(ConfirmBookingRequestDto request);
 }
