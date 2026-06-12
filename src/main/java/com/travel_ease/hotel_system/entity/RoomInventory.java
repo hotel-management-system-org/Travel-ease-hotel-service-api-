@@ -28,7 +28,7 @@ public class RoomInventory {
     private Room room;
 
     @Column(name = "room_id", insertable = false, updatable = false)
-    private UUID roomId;
+    private String roomId;
 
     @Column(name = "inventory_date", nullable = false)
     private LocalDate inventoryDate;
