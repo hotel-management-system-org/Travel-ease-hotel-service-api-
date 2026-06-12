@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
+
 
 @Component
 @RequiredArgsConstructor
@@ -42,7 +42,7 @@ public class InventoryScheduler {
             if (!exists){
                 RoomInventory inventory = RoomInventory.builder()
                         .room(room)
-                        .roomId(UUID.fromString(room.getRoomId()))
+                        .roomId(room.getRoomId())
                         .inventoryDate(targetFutureDate)
                         .totalRooms(1)
                         .bookedRooms(0)
