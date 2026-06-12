@@ -82,7 +82,7 @@ public class RoomServiceImpl implements RoomService {
         for (int i = 0; i < inventoryPreviewDays; i++) {
             RoomInventory inventory = RoomInventory.builder()
                     .room(savedRoom)
-                    .roomId(UUID.fromString(savedRoom.getRoomId()))
+                    .roomId(String.valueOf(UUID.fromString(savedRoom.getRoomId())))
                     .inventoryDate(today.plusDays(i))
                     .totalRooms(1)
                     .bookedRooms(0)
