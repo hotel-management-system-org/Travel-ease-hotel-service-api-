@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hotel-service-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hotel-service
+  template:
+    metadata:
+      labels:
+        app: hotel-service
+    spec:
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox
+          command: ['sh', '-c', 'until nc -z mysqldb 3306; do echo waiting for mysql; sleep 2; done;']
+      containers:
+        - name: hotel-service
+          image: travel-ease-hotel-service:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SPRING_REDIS_HOST
+              value: "redis-service"
+            - name: SPRING_REDIS_PORT
+              value: "6379"
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:mysql://mysqldb:3306/travel_ease_hotel_db?useSSL=false&allowPublicKeyRetrieval=true"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: "hotel_user"
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: "hotel_password123"
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hotel-service
+spec:
+  selector:
+    app: hotel-service
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP
