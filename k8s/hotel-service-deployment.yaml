@@ -18,7 +18,7 @@ spec:
           command: ['sh', '-c', 'until nc -z mysqldb 3306; do echo waiting for mysql; sleep 2; done;']
       containers:
         - name: hotel-service
-          image: travel-ease-hotel-service:latest
+          image: travel-ease-hotel-service:v1.1
           imagePullPolicy: IfNotPresent
           env:
             - name: SPRING_REDIS_HOST
@@ -28,9 +28,9 @@ spec:
             - name: SPRING_DATASOURCE_URL
               value: "jdbc:mysql://mysqldb:3306/travel_ease_hotel_db?useSSL=false&allowPublicKeyRetrieval=true"
             - name: SPRING_DATASOURCE_USERNAME
-              value: "hotel_user"
+              value: "travel_ease_user"
             - name: SPRING_DATASOURCE_PASSWORD
-              value: "hotel_password123"
+              value: "user1234"
           ports:
             - containerPort: 8080
 ---
